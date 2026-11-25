@@ -1,0 +1,245 @@
+﻿SET NAMES utf8mb4;
+
+
+DROP TABLE IF EXISTS AFFECTED;
+DROP TABLE IF EXISTS EVACUATE;
+DROP TABLE IF EXISTS FAVORI;
+DROP TABLE IF EXISTS LOG;
+DROP TABLE IF EXISTS INTERET_ZONE;
+DROP TABLE IF EXISTS ALERT;
+DROP TABLE IF EXISTS DANGER_CIRCLE;
+DROP TABLE IF EXISTS SHELTER;
+DROP TABLE IF EXISTS FIRE;
+DROP TABLE IF EXISTS USER;
+DROP TABLE IF EXISTS MUNICIPALITY;
+DROP TABLE IF EXISTS PARAMETER;
+
+
+CREATE TABLE MUNICIPALITY (
+    code_insee               CHAR(5)       NOT NULL,
+    municipality_name        VARCHAR(100)  NOT NULL,
+    postal_code_municipality CHAR(5)       NOT NULL,
+    department               VARCHAR(3)    NOT NULL,
+    municipality_latitude    DECIMAL(9,6)  NOT NULL,
+    municipality_longitude   DECIMAL(9,6)  NOT NULL,
+    CONSTRAINT pk_municipality PRIMARY KEY (code_insee),
+    CONSTRAINT ck_municipality_insee  CHECK (code_insee REGEXP '^([0-9]{2}|2A|2B)[0-9]{3}$'),
+    CONSTRAINT ck_municipality_postal CHECK (postal_code_municipality REGEXP '^[0-9]{5}$'),
+    CONSTRAINT ck_municipality_dept   CHECK (department REGEXP '^([0-9]{2,3}|2A|2B)$'),
+    CONSTRAINT ck_municipality_lat    CHECK (municipality_latitude  BETWEEN -90  AND 90),
+    CONSTRAINT ck_municipality_long   CHECK (municipality_longitude BETWEEN -180 AND 180)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE USER (
+    user_id                  INT           NOT NULL AUTO_INCREMENT,
+    email                    VARCHAR(255)  NOT NULL,
+    coded_password           VARCHAR(255)  NOT NULL,
+    role                     VARCHAR(15)   NOT NULL DEFAULT 'UTILISATEUR',
+    user_lastname            VARCHAR(50)   NULL,
+    user_first_name          VARCHAR(50)   NULL,
+    service_agent            VARCHAR(100)  NULL,
+    secret_2fa               VARCHAR(64)   NULL,
+    active_account           BOOLEAN       NOT NULL DEFAULT TRUE,
+    date_account_creation    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    date_last_connexion      DATETIME      NULL,
+    prm_requirement          BOOLEAN       NOT NULL DEFAULT FALSE,
+    child_requirement        BOOLEAN       NOT NULL DEFAULT FALSE,
+    animals_requirement      BOOLEAN       NOT NULL DEFAULT FALSE,
+    other_requirement        VARCHAR(255)  NULL,
+    date_consent_requirement DATETIME      NULL,
+    CONSTRAINT pk_user PRIMARY KEY (user_id),
+    CONSTRAINT uq_user_email UNIQUE (email),
+    CONSTRAINT ck_user_email_format CHECK (email REGEXP '^[^@ ]+@[^@ ]+[.][^@ ]+$'),
+    CONSTRAINT ck_user_role CHECK (role IN ('UTILISATEUR','AGENT','ADMIN')),
+    CONSTRAINT ck_user_identity CHECK (role = 'UTILISATEUR'
+        OR (user_lastname IS NOT NULL AND user_first_name IS NOT NULL)),
+    CONSTRAINT ck_user_service CHECK (role <> 'AGENT' OR service_agent IS NOT NULL),
+    CONSTRAINT ck_user_2fa CHECK (role = 'UTILISATEUR' OR secret_2fa IS NOT NULL),
+    CONSTRAINT ck_user_active  CHECK (active_account      IN (0,1)),
+    CONSTRAINT ck_user_prm     CHECK (prm_requirement     IN (0,1)),
+    CONSTRAINT ck_user_child   CHECK (child_requirement   IN (0,1)),
+    CONSTRAINT ck_user_animals CHECK (animals_requirement IN (0,1)),
+    CONSTRAINT ck_user_consent CHECK (
+        NOT (prm_requirement = 1 OR child_requirement = 1 OR animals_requirement = 1
+             OR other_requirement IS NOT NULL)
+        OR date_consent_requirement IS NOT NULL)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE FIRE (
+    fire_id          INT           NOT NULL AUTO_INCREMENT,
+    fire_title       VARCHAR(100)  NOT NULL,
+    fire_type        VARCHAR(20)   NOT NULL,
+    fire_description VARCHAR(2000) NULL,
+    fire_level       VARCHAR(10)   NOT NULL,
+    fire_status      VARCHAR(10)   NOT NULL DEFAULT 'EN_COURS',
+    fire_size        DECIMAL(8,2)  NULL,
+    fire_start       DATETIME      NOT NULL,
+    fire_end_date    DATETIME      NULL,
+    fire_update      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                   ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT pk_fire PRIMARY KEY (fire_id),
+    CONSTRAINT ck_fire_type   CHECK (fire_type IN ('FEU_FORET','FEU_CULTURES','FEU_HABITATION','FEU_INDUSTRIEL','AUTRE')),
+    CONSTRAINT ck_fire_level  CHECK (fire_level IN ('FAIBLE','MODERE','ELEVE','CRITIQUE')),
+    CONSTRAINT ck_fire_status CHECK (fire_status IN ('EN_COURS','MAITRISE','CLOS')),
+    CONSTRAINT ck_fire_size   CHECK (fire_size > 0),
+    CONSTRAINT ck_fire_end    CHECK (fire_end_date IS NULL OR fire_end_date >= fire_start)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE DANGER_CIRCLE (
+    id_circle        INT           NOT NULL AUTO_INCREMENT,
+    circle_latitude  DECIMAL(9,6)  NOT NULL,
+    circle_longitude DECIMAL(9,6)  NOT NULL,
+    circle_radius_km DECIMAL(5,2)  NOT NULL,
+    circle_order     INT           NULL,
+    fire_id          INT           NOT NULL,
+    CONSTRAINT pk_danger_circle PRIMARY KEY (id_circle),
+    CONSTRAINT fk_circle_fire FOREIGN KEY (fire_id) REFERENCES FIRE (fire_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT ck_circle_lat    CHECK (circle_latitude  BETWEEN -90  AND 90),
+    CONSTRAINT ck_circle_long   CHECK (circle_longitude BETWEEN -180 AND 180),
+    CONSTRAINT ck_circle_radius CHECK (circle_radius_km > 0),
+    CONSTRAINT ck_circle_order  CHECK (circle_order >= 1),
+    CONSTRAINT uq_circle_fire_order UNIQUE (fire_id, circle_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE SHELTER (
+    center_id                       INT           NOT NULL AUTO_INCREMENT,
+    center_name                     VARCHAR(100)  NOT NULL,
+    center_address                  VARCHAR(255)  NOT NULL,
+    center_postal_code              CHAR(5)       NOT NULL,
+    center_latitude                 DECIMAL(9,6)  NOT NULL,
+    center_longitude                DECIMAL(9,6)  NOT NULL,
+    max_capacity                    INT           NOT NULL,
+    availables_places               INT           NOT NULL,
+    center_state                    VARCHAR(10)   NOT NULL DEFAULT 'FERME',
+    prm_access                      BOOLEAN       NOT NULL DEFAULT FALSE,
+    pet_friendly_evacuation_shelter BOOLEAN       NOT NULL DEFAULT FALSE,
+    sanitary                        BOOLEAN       NOT NULL DEFAULT FALSE,
+    restoration                     BOOLEAN       NOT NULL DEFAULT FALSE,
+    center_update_date              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                                  ON UPDATE CURRENT_TIMESTAMP,
+    code_insee                      CHAR(5)       NOT NULL,
+    CONSTRAINT pk_shelter PRIMARY KEY (center_id),
+    CONSTRAINT fk_shelter_municipality FOREIGN KEY (code_insee) REFERENCES MUNICIPALITY (code_insee)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT ck_shelter_postal   CHECK (center_postal_code REGEXP '^[0-9]{5}$'),
+    CONSTRAINT ck_shelter_lat      CHECK (center_latitude  BETWEEN -90  AND 90),
+    CONSTRAINT ck_shelter_long     CHECK (center_longitude BETWEEN -180 AND 180),
+    CONSTRAINT ck_shelter_capacity CHECK (max_capacity > 0),
+    CONSTRAINT ck_shelter_places   CHECK (availables_places >= 0 AND availables_places <= max_capacity),
+    CONSTRAINT ck_shelter_state    CHECK (center_state IN ('FERME','OUVERT','COMPLET')),
+    CONSTRAINT ck_shelter_prm      CHECK (prm_access  IN (0,1)),
+    CONSTRAINT ck_shelter_pet      CHECK (pet_friendly_evacuation_shelter IN (0,1)),
+    CONSTRAINT ck_shelter_sanitary CHECK (sanitary    IN (0,1)),
+    CONSTRAINT ck_shelter_resto    CHECK (restoration IN (0,1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE ALERT (
+    alert_id         INT           NOT NULL AUTO_INCREMENT,
+    alert_type       VARCHAR(20)   NOT NULL,
+    alert_title      VARCHAR(100)  NOT NULL,
+    alert_message    VARCHAR(1000) NOT NULL,
+    alert_sender     VARCHAR(100)  NOT NULL,
+    publication_date DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiry_date      DATETIME      NULL,
+    alert_retired    BOOLEAN       NOT NULL DEFAULT FALSE,
+    latitude_alert   DECIMAL(9,6)  NULL,
+    longitude_alert  DECIMAL(9,6)  NULL,
+    alert_radius_km  DECIMAL(5,2)  NULL,
+    user_id          INT           NOT NULL,
+    fire_id          INT           NULL,
+    CONSTRAINT pk_alert PRIMARY KEY (alert_id),
+    CONSTRAINT fk_alert_user FOREIGN KEY (user_id) REFERENCES USER (user_id)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_alert_fire FOREIGN KEY (fire_id) REFERENCES FIRE (fire_id),
+    CONSTRAINT ck_alert_type    CHECK (alert_type IN ('INFORMATION','RECOMMANDATION','ALERTE','CONSIGNE_OFFICIELLE')),
+    CONSTRAINT ck_alert_expiry  CHECK (expiry_date IS NULL OR expiry_date > publication_date),
+    CONSTRAINT ck_alert_retired CHECK (alert_retired IN (0,1)),
+    CONSTRAINT ck_alert_lat     CHECK (latitude_alert  BETWEEN -90  AND 90),
+    CONSTRAINT ck_alert_long    CHECK (longitude_alert BETWEEN -180 AND 180),
+    CONSTRAINT ck_alert_radius  CHECK (alert_radius_km > 0),
+    CONSTRAINT ck_alert_zone_complete CHECK (
+        (latitude_alert IS NULL AND longitude_alert IS NULL AND alert_radius_km IS NULL)
+        OR (latitude_alert IS NOT NULL AND longitude_alert IS NOT NULL AND alert_radius_km IS NOT NULL)),
+    CONSTRAINT ck_alert_target CHECK (
+        fire_id IS NOT NULL
+        OR (latitude_alert IS NOT NULL AND longitude_alert IS NOT NULL AND alert_radius_km IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE INTERET_ZONE (
+    id_zone_interet INT           NOT NULL AUTO_INCREMENT,
+    zone_name       VARCHAR(50)   NOT NULL,
+    zone_latitude   DECIMAL(9,6)  NULL,
+    zone_longitude  DECIMAL(9,6)  NULL,
+    radius_zone_km  DECIMAL(5,2)  NULL,
+    user_id         INT           NOT NULL,
+    CONSTRAINT pk_interet_zone PRIMARY KEY (id_zone_interet),
+    CONSTRAINT fk_zone_user FOREIGN KEY (user_id) REFERENCES USER (user_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT ck_zone_lat    CHECK (zone_latitude  BETWEEN -90  AND 90),
+    CONSTRAINT ck_zone_long   CHECK (zone_longitude BETWEEN -180 AND 180),
+    CONSTRAINT ck_zone_radius CHECK (radius_zone_km BETWEEN 0.5 AND 50),
+    CONSTRAINT ck_zone_coords CHECK ((zone_latitude IS NULL) = (zone_longitude IS NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE LOG (
+    log_id          INT          NOT NULL AUTO_INCREMENT,
+    action_date     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    subject_matter  VARCHAR(15)  NOT NULL,
+    object_id       INT          NULL,
+    action_type     VARCHAR(20)  NOT NULL,
+    user_id         INT          NOT NULL,
+    CONSTRAINT pk_log PRIMARY KEY (log_id),
+    CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES USER (user_id)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT ck_log_action  CHECK (action_type IN ('CREATION','MODIFICATION','CHANGEMENT_ETAT','PUBLICATION','SUPPRESSION','CONNEXION_ECHOUEE')),
+    CONSTRAINT ck_log_subject CHECK (subject_matter IN ('CENTRE','INCENDIE','ALERTE','UTILISATEUR'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE PARAMETER (
+    parameter_key   VARCHAR(50)  NOT NULL,
+    parameter_value VARCHAR(255) NOT NULL,
+    CONSTRAINT pk_parameter PRIMARY KEY (parameter_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE FAVORI (
+    user_id             INT       NOT NULL,
+    center_id           INT       NOT NULL,
+    date_added_favorite DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_favori PRIMARY KEY (user_id, center_id),
+    CONSTRAINT fk_favori_user   FOREIGN KEY (user_id)   REFERENCES USER (user_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_favori_center FOREIGN KEY (center_id) REFERENCES SHELTER (center_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE EVACUATE (
+    center_id INT NOT NULL,
+    fire_id   INT NOT NULL,
+    CONSTRAINT pk_evacuate PRIMARY KEY (center_id, fire_id),
+    CONSTRAINT fk_evacuate_center FOREIGN KEY (center_id) REFERENCES SHELTER (center_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_evacuate_fire   FOREIGN KEY (fire_id)   REFERENCES FIRE (fire_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE AFFECTED (
+    code_insee CHAR(5) NOT NULL,
+    fire_id    INT     NOT NULL,
+    CONSTRAINT pk_affected PRIMARY KEY (code_insee, fire_id),
+    CONSTRAINT fk_affected_municipality FOREIGN KEY (code_insee) REFERENCES MUNICIPALITY (code_insee)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_affected_fire FOREIGN KEY (fire_id) REFERENCES FIRE (fire_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
